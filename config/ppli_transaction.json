@@ -1,0 +1,69 @@
+{
+  "name": "Link16 PPLI Transaction Workflow",
+  "version": "1.0.0",
+  "description": "Workflow for processing Link-16 J2.2 PPLI messages with 5 standardized transactions",
+  "transactions": [
+    {
+      "id": "prepare_send",
+      "name": "Prepare PPLI Message Send",
+      "description": "Initialize, classify, encode, and validate PPLI message before transmission",
+      "trigger": "manual",
+      "steps": [
+        {"node": "init_ppli_data"},
+        {"node": "classify_platform"},
+        {"node": "encode_ppli_message"},
+        {"node": "validate_message"}
+      ]
+    },
+    {
+      "id": "send",
+      "name": "Transmit PPLI Message",
+      "description": "Check send conditions, assign NPG slot, and transmit message",
+      "trigger": "auto",
+      "steps": [
+        {"node": "check_send_condition"},
+        {"node": "assign_npg_slot"},
+        {"node": "transmit"}
+      ]
+    },
+    {
+      "id": "receive",
+      "name": "Receive and Process PPLI Message",
+      "description": "Decode, filter, correlate, and store received PPLI messages",
+      "trigger": "auto",
+      "steps": [
+        {"node": "decode_message"},
+        {"node": "receive_filter"},
+        {"node": "ppli_correlate"},
+        {"node": "create_entry"},
+        {"node": "update_entry"},
+        {"node": "duplicate_resolve"},
+        {"node": "store_ppli"}
+      ]
+    },
+    {
+      "id": "clear",
+      "name": "Clear Expired Tracks",
+      "description": "Check TTL and remove expired tracks from database",
+      "trigger": "timer",
+      "steps": [
+        {"node": "check_ttl"},
+        {"node": "check_source_ju"},
+        {"node": "retain_entry"},
+        {"node": "delete_entry"}
+      ]
+    },
+    {
+      "id": "special_process",
+      "name": "Handle Anomalies and Special Cases",
+      "description": "Detect and resolve anomalies in PPLI processing",
+      "trigger": "exception",
+      "steps": [
+        {"node": "detect_anomaly"},
+        {"node": "resolve_conflict"},
+        {"node": "clamp_field"},
+        {"node": "log_result"}
+      ]
+    }
+  ]
+}
