@@ -1,16 +1,3 @@
-# TDL Workflow Engine
-
-A workflow engine for Tactical Data Link (TDL) message processing, featuring a declarative JSON-driven workflow definition, plug-in node registry, and conditional routing mechanism.
-
-## Architecture
-
-The engine decomposes the TDL message lifecycle into five formally defined processing stages:
-
-1. **Receive** - Message ingestion and validation
-2. **Parse** - Bit-level extraction of J-series message fields
-3. **Process** - Domain logic (track correlation, relay decisions)
-4. **Serialize** - Output formatting and encoding
-5. **Transmit** - Message dispatch with bounded worker pool
 
 ## Key Features
 
