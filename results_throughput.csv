@@ -1,0 +1,8 @@
+rate,processed,achieved,lat_p50_us,lat_p99_us,mode
+100,100,90.9,20.36,417.62,independent-db
+500,500,457.1,10.36,571.02,independent-db
+1000,1000,916.4,10.00,663.80,independent-db
+2000,2000,1830.3,9.56,815.80,independent-db
+5000,5000,4570.3,7.44,900.78,independent-db
+8000,8000,7327.8,7.34,885.30,independent-db
+10000,10000,9165.4,7.06,887.94,independent-db

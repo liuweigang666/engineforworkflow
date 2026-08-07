@@ -43,6 +43,58 @@ func getStringField(data interface{}, key string) string {
 	return ""
 }
 
+// getBoolField reads a boolean field from a token data map.
+func getBoolField(data interface{}, key string) (bool, bool) {
+	if m, ok := data.(map[string]interface{}); ok {
+		if v, ok := m[key].(bool); ok {
+			return v, true
+		}
+	}
+	return false, false
+}
+
+// messageFromData builds a PPLIMessage from a token's data map, or nil if
+// the map does not contain usable fields.
+func messageFromData(data interface{}) *model.PPLIMessage {
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	get := func(key string) string {
+		if s, ok := m[key].(string); ok {
+			return s
+		}
+		return ""
+	}
+	getF := func(key string) float64 {
+		switch v := m[key].(type) {
+		case float64:
+			return v
+		case int:
+			return float64(v)
+		}
+		return 0
+	}
+	if get("track_id") == "" {
+		return nil
+	}
+	return &model.PPLIMessage{
+		TrackID:       get("track_id"),
+		SourceJU:      get("source_ju"),
+		Latitude:      getF("latitude"),
+		Longitude:     getF("longitude"),
+		Altitude:      getF("altitude"),
+		Speed:         getF("speed"),
+		Course:        getF("course"),
+		Identity:      get("identity"),
+		MessageType:   "J2.2",
+		TimeOfTrack:   time.Now(),
+		TimeOfMessage: time.Now(),
+		NPGNumber:     6,
+		Valid:         true,
+	}
+}
+
 type ValidateMessageNode struct{}
 
 func (n *ValidateMessageNode) Name() string { return "validate_message" }
@@ -74,15 +126,18 @@ func (n *CheckSendConditionNode) Name() string { return "check_send_condition" }
 
 func (n *CheckSendConditionNode) Execute(ctx NodeContext) (NodeOutput, error) {
 	trigger := getStringField(ctx.Data, "trigger_type")
-	if trigger == "" {
-		if rand.Float32() > 0.5 {
-			trigger = "auto"
-		} else {
-			trigger = "operator"
-		}
+	canSend := true
+	reasons := []string{"NPG slot available", "Message validated"}
+	if deny, ok := getBoolField(ctx.Data, "force_deny"); ok && deny {
+		canSend = false
+		reasons = []string{"Transmission window closed"}
 	}
-
-	return NodeOutput{"trigger": trigger, "conditions_met": true, "reasons": []string{"NPG slot available", "Message validated"}, "can_send": true}, nil
+	return NodeOutput{
+		"trigger":        trigger,
+		"conditions_met": canSend,
+		"reasons":        reasons,
+		"can_send":       canSend,
+	}, nil
 }
 
 type AssignNPGSlotNode struct{}
@@ -97,6 +152,11 @@ type TransmitNode struct{}
 
 func (n *TransmitNode) Name() string { return "transmit" }
 
+// TransmitDelay simulates the network transmission latency. Benchmarks set
+// it to zero so that latency measurements reflect engine overhead rather
+// than the simulated transmission wait.
+var TransmitDelay = 10 * time.Millisecond
+
 func (n *TransmitNode) Execute(ctx NodeContext) (NodeOutput, error) {
 	npgNum := 6
 	slotIdx := 100
@@ -110,7 +170,7 @@ func (n *TransmitNode) Execute(ctx NodeContext) (NodeOutput, error) {
 		}
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(TransmitDelay)
 
 	return NodeOutput{"transmitted": true, "npg_number": npgNum, "slot_index": slotIdx, "tx_status": "success"}, nil
 }
@@ -120,27 +180,32 @@ type DecodeMessageNode struct{}
 func (n *DecodeMessageNode) Name() string { return "decode_message" }
 
 func (n *DecodeMessageNode) Execute(ctx NodeContext) (NodeOutput, error) {
-	msg := &model.PPLIMessage{
-		TrackID:        "NEW_TRK001",
-		SourceJU:       "JU002",
-		TrackNum:       1002,
-		PlatformType:   model.PlatformAir,
-		Latitude:       35.6900,
-		Longitude:      139.7700,
-		Altitude:       8500,
-		Speed:          275,
-		Course:         95,
-		Identity:       "FRIEND",
-		TimeOfTrack:    time.Now().Add(-1 * time.Second),
-		TimeOfMessage:  time.Now(),
-		NPGNumber:      6,
-		MessageType:    "J2.2",
-		Valid:          true,
+	// J2.2 word path: decode the J2.2 IW+E0 payload produced by
+	// encode_ppli_message back into a PPLIMessage (deterministic round-trip).
+	if payload, ok := getJ22Field(ctx.Data); ok {
+		msg, err := model.DecodeJ22(payload)
+		if err != nil {
+			return nil, fmt.Errorf("decode failed: %v", err)
+		}
+		return NodeOutput{
+			"message":       msg,
+			"track_id":      msg.TrackID,
+			"decoded":       true,
+			"decode_status": "success",
+		}, nil
 	}
-
-	// Check if there's an incoming track ID override
-	if trackID := getStringField(ctx.Data, "track_id"); trackID != "" {
-		msg.TrackID = trackID
+	msg := extractMessage(ctx.Data)
+	if msg == nil {
+		return nil, fmt.Errorf("decode failed: no message data in context")
+	}
+	if !msg.Valid {
+		return nil, fmt.Errorf("decode failed: message marked invalid (track %s)", msg.TrackID)
+	}
+	if msg.TrackID == "" {
+		return nil, fmt.Errorf("decode failed: missing track id")
+	}
+	if msg.Latitude < -90 || msg.Latitude > 90 || msg.Longitude < -180 || msg.Longitude > 180 {
+		return nil, fmt.Errorf("decode failed: position out of range (lat=%v lon=%v)", msg.Latitude, msg.Longitude)
 	}
 
 	output := NodeOutput{
@@ -150,6 +215,16 @@ func (n *DecodeMessageNode) Execute(ctx NodeContext) (NodeOutput, error) {
 		"decode_status": "success",
 	}
 	return output, nil
+}
+
+// getJ22Field reads a []byte J2.2 payload from a token data map.
+func getJ22Field(data interface{}) ([]byte, bool) {
+	if m, ok := data.(map[string]interface{}); ok {
+		if p, ok := m["j22"].([]byte); ok {
+			return p, true
+		}
+	}
+	return nil, false
 }
 
 type ReceiveFilterNode struct{}
@@ -193,7 +268,10 @@ func (n *CheckTTLNode) Execute(ctx NodeContext) (NodeOutput, error) {
 
 	if trackID == "" {
 		expiredCount := n.db.CleanExpired()
-		return NodeOutput{"expired_count": expiredCount, "ttl_check": "bulk"}, nil
+		// Bulk scan: the database has already been purged, so no per-entry
+		// expiry branch should fire; expired=false routes the stage to the
+		// retain/terminate branch.
+		return NodeOutput{"expired_count": expiredCount, "expired": false, "ttl_check": "bulk"}, nil
 	}
 
 	expired, err := n.db.CheckExpired(trackID)
@@ -255,4 +333,18 @@ func (n *SkipNode) Name() string { return "skip" }
 
 func (n *SkipNode) Execute(ctx NodeContext) (NodeOutput, error) {
 	return NodeOutput{"skipped": true}, nil
+}
+
+// TimerTriggerNode generates timer-based trigger events. It is the
+// cross-stage node in the processing node inventory (Appendix B), used to
+// drive timer-triggered stages such as T4 (Clear).
+type TimerTriggerNode struct{}
+
+func (n *TimerTriggerNode) Name() string { return "timer_trigger" }
+
+func (n *TimerTriggerNode) Execute(ctx NodeContext) (NodeOutput, error) {
+	return NodeOutput{
+		"trigger":       "timer",
+		"timer_trigger": true,
+	}, nil
 }

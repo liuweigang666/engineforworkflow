@@ -1,0 +1,83 @@
+{
+  "name": "Link16 PPLI Processing Workflow",
+  "version": "1.0.1",
+  "description": "Workflow for processing Link-16 J2.2 PPLI messages with 5 standardized processing stages (T1-T5)",
+  "stages": [
+    {
+      "id": "prepare_send",
+      "name": "Prepare PPLI Message Send",
+      "description": "Initialize, classify, encode, and validate PPLI message before transmission (T1)",
+      "trigger": "manual",
+      "steps": [
+        {"id": "s1", "node": "init_ppli_data"},
+        {"id": "s2", "node": "classify_platform"},
+        {"id": "s3", "node": "encode_ppli_message"},
+        {"id": "s4", "node": "validate_message", "on_reject": "skip"}
+      ]
+    },
+    {
+      "id": "send",
+      "name": "Transmit PPLI Message",
+      "description": "Check send conditions, assign NPG slot, and transmit message (T2)",
+      "trigger": "auto",
+      "steps": [
+        {"id": "s1", "node": "check_send_condition",
+         "branches": [
+           {"condition": "can_send == true", "goto": "s2"},
+           {"condition": "can_send == false", "goto": "end"}
+         ],
+         "default_goto": "end"},
+        {"id": "s2", "node": "assign_npg_slot"},
+        {"id": "s3", "node": "transmit", "on_reject": "abort"}
+      ]
+    },
+    {
+      "id": "receive",
+      "name": "Receive and Process PPLI Message",
+      "description": "Decode, filter, correlate, and store received PPLI messages with conditional routing on the correlation result (T3)",
+      "trigger": "auto",
+      "steps": [
+        {"id": "r1", "node": "decode_message", "on_reject": "abort"},
+        {"id": "r2", "node": "receive_filter", "on_reject": "skip"},
+        {"id": "r3", "node": "ppli_correlate", "on_reject": "abort",
+         "branches": [
+           {"condition": "correlation == new", "goto": "r4"},
+           {"condition": "correlation == update", "goto": "r5"},
+           {"condition": "correlation == duplicate", "goto": "r6"}
+         ]},
+        {"id": "r4", "node": "create_entry", "on_reject": "abort", "default_goto": "r7"},
+        {"id": "r5", "node": "update_entry", "on_reject": "abort", "default_goto": "r7"},
+        {"id": "r6", "node": "duplicate_resolve", "default_goto": "r7"},
+        {"id": "r7", "node": "store_ppli", "on_reject": "skip"}
+      ]
+    },
+    {
+      "id": "clear",
+      "name": "Clear Expired Tracks",
+      "description": "Check TTL and remove expired tracks from database with conditional routing on the expiry result (T4)",
+      "trigger": "timer",
+      "steps": [
+        {"id": "c1", "node": "check_ttl",
+         "branches": [
+           {"condition": "expired == true", "goto": "c2"},
+           {"condition": "expired == false", "goto": "c3"}
+         ]},
+        {"id": "c2", "node": "check_source_ju", "default_goto": "c4"},
+        {"id": "c3", "node": "retain_entry", "default_goto": "end"},
+        {"id": "c4", "node": "delete_entry", "default_goto": "end"}
+      ]
+    },
+    {
+      "id": "special_process",
+      "name": "Handle Anomalies and Special Cases",
+      "description": "Detect and resolve anomalies in PPLI processing (T5)",
+      "trigger": "exception",
+      "steps": [
+        {"id": "t1", "node": "detect_anomaly"},
+        {"id": "t2", "node": "resolve_conflict"},
+        {"id": "t3", "node": "clamp_field"},
+        {"id": "t4", "node": "log_result"}
+      ]
+    }
+  ]
+}

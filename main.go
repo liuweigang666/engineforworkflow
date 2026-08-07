@@ -13,8 +13,8 @@ import (
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║     Link-16 PPLI Transaction Workflow Engine                ║")
-	fmt.Println("║     Data Link Message Processing System v1.0                 ║")
+	fmt.Println("║     Link-16 PPLI Processing Workflow Engine                 ║")
+	fmt.Println("║     Tactical Data Link Message Processing System v1.0.1     ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
@@ -32,7 +32,7 @@ func main() {
 
 	engine := workflow.NewEngine(registry)
 
-	workflowDef, err := engine.LoadWorkflow("config/ppli_transaction.json")
+	workflowDef, err := engine.LoadWorkflow("config/ppli_stages.json")
 	if err != nil {
 		log.Fatalf("[Main] Failed to load workflow: %v", err)
 	}
@@ -85,8 +85,8 @@ func main() {
 		Speed:         275,
 		Course:        95,
 		Identity:      "FRIEND",
-		TimeOfTrack:   time.Now(),
-		TimeOfMessage: time.Now(),
+		TimeOfTrack:   time.Now().Add(-2 * time.Second),
+		TimeOfMessage: time.Now().Add(-2 * time.Second),
 		NPGNumber:     6,
 		MessageType:   "J2.2",
 		Valid:         true,
@@ -116,8 +116,8 @@ func main() {
 		Speed:         280,
 		Course:        100,
 		Identity:      "FRIEND",
-		TimeOfTrack:   time.Now(),
-		TimeOfMessage: time.Now(),
+		TimeOfTrack:   time.Now().Add(-1 * time.Second),
+		TimeOfMessage: time.Now().Add(-1 * time.Second),
 		NPGNumber:     6,
 		MessageType:   "J2.2",
 		Valid:         true,
@@ -147,8 +147,8 @@ func main() {
 		Speed:         275,
 		Course:        95,
 		Identity:      "FRIEND",
-		TimeOfTrack:   time.Now().Add(-1 * time.Second),
-		TimeOfMessage: time.Now().Add(-1 * time.Second),
+		TimeOfTrack:   time.Now().Add(-2 * time.Second),
+		TimeOfMessage: time.Now().Add(-2 * time.Second),
 		NPGNumber:     6,
 		MessageType:   "J2.2",
 		Valid:         true,
@@ -229,7 +229,7 @@ func registerPPLINodes(registry *node.NodeRegistry, db *model.TrackDB) {
 	registry.Register(&node.InitPPLIDataNode{})
 	registry.Register(&node.ClassifyPlatformNode{})
 	registry.Register(&node.EncodePPLIMessageNode{})
-	registry.Register(&node.PPLICorrelateNode{})
+	registry.Register(node.NewPPLICorrelateNode(db))
 	registry.Register(node.NewStorePPLINode(db))
 	registry.Register(node.NewCreateEntryNode(db))
 	registry.Register(node.NewUpdateEntryNode(db))
@@ -251,5 +251,5 @@ func registerCommonNodes(registry *node.NodeRegistry, db *model.TrackDB) {
 	registry.Register(node.NewCheckTTLNode(db))
 	registry.Register(node.NewCheckSourceJUNode(db))
 	registry.Register(&node.DetectAnomalyNode{})
-	registry.Register(&node.SkipNode{})
+	registry.Register(&node.TimerTriggerNode{})
 }

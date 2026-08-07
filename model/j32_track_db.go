@@ -6,73 +6,68 @@ import (
 	"time"
 )
 
-type TrackEntry struct {
-	PPLIMessage
+// J32TrackEntry is a track-database record for J3.2 air tracks.
+type J32TrackEntry struct {
+	J32Message
 	Status     TrackStatus
 	LastUpdate time.Time
 	TTL        int
 	Version    int
 }
 
-type TrackDB struct {
+// J32TrackDB is a concurrent-safe, in-memory store for J3.2 air tracks,
+// mirroring TrackDB but for the J3.2 message type.
+type J32TrackDB struct {
 	mu     sync.RWMutex
-	tracks map[string]*TrackEntry
+	tracks map[string]*J32TrackEntry
 }
 
-func NewTrackDB() *TrackDB {
-	return &TrackDB{tracks: make(map[string]*TrackEntry)}
+func NewJ32TrackDB() *J32TrackDB {
+	return &J32TrackDB{tracks: make(map[string]*J32TrackEntry)}
 }
 
-func (db *TrackDB) Create(trackID string, msg *PPLIMessage) error {
+func (db *J32TrackDB) Create(trackID string, msg *J32Message) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
 	if _, exists := db.tracks[trackID]; exists {
 		return fmt.Errorf("track %s already exists", trackID)
 	}
-
-	entry := &TrackEntry{
-		PPLIMessage: *msg,
-		Status:      TrackStatusActive,
-		LastUpdate:  time.Now(),
-		TTL:         300,
-		Version:     1,
+	db.tracks[trackID] = &J32TrackEntry{
+		J32Message: *msg,
+		Status:     TrackStatusActive,
+		LastUpdate: time.Now(),
+		TTL:        300,
+		Version:    1,
 	}
-	db.tracks[trackID] = entry
 	return nil
 }
 
-func (db *TrackDB) Update(trackID string, msg *PPLIMessage) error {
+func (db *J32TrackDB) Update(trackID string, msg *J32Message) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
 	entry, exists := db.tracks[trackID]
 	if !exists {
 		return fmt.Errorf("track %s not found", trackID)
 	}
-
-	entry.PPLIMessage = *msg
+	entry.J32Message = *msg
 	entry.LastUpdate = time.Now()
 	entry.Version++
 	return nil
 }
 
-func (db *TrackDB) Delete(trackID string) error {
+func (db *J32TrackDB) Delete(trackID string) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
 	if _, exists := db.tracks[trackID]; !exists {
 		return fmt.Errorf("track %s not found", trackID)
 	}
-
 	delete(db.tracks, trackID)
 	return nil
 }
 
-func (db *TrackDB) Get(trackID string) (*TrackEntry, error) {
+func (db *J32TrackDB) Get(trackID string) (*J32TrackEntry, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-
 	entry, exists := db.tracks[trackID]
 	if !exists {
 		return nil, fmt.Errorf("track %s not found", trackID)
@@ -80,39 +75,42 @@ func (db *TrackDB) Get(trackID string) (*TrackEntry, error) {
 	return entry, nil
 }
 
-func (db *TrackDB) GetAll() map[string]*TrackEntry {
+func (db *J32TrackDB) Size() int {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
+	return len(db.tracks)
+}
 
-	result := make(map[string]*TrackEntry, len(db.tracks))
+// GetAll returns a snapshot of all track entries.
+func (db *J32TrackDB) GetAll() map[string]*J32TrackEntry {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	result := make(map[string]*J32TrackEntry, len(db.tracks))
 	for k, v := range db.tracks {
 		result[k] = v
 	}
 	return result
 }
 
-func (db *TrackDB) CheckExpired(trackID string) (bool, error) {
+// CheckExpired evaluates TTL against the message's own timestamp.
+func (db *J32TrackDB) CheckExpired(trackID string) (bool, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-
 	entry, exists := db.tracks[trackID]
 	if !exists {
 		return false, fmt.Errorf("track %s not found", trackID)
 	}
-
-	// TTL is evaluated against the message's own timestamp (the time the
-	// track data was produced), not the wall-clock time of the DB write.
-	elapsed := time.Since(entry.PPLIMessage.TimeOfMessage).Seconds()
+	elapsed := time.Since(entry.J32Message.TimeOfMessage).Seconds()
 	return elapsed > float64(entry.TTL), nil
 }
 
-func (db *TrackDB) CleanExpired() int {
+// CleanExpired removes all expired tracks and returns the count removed.
+func (db *J32TrackDB) CleanExpired() int {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
 	count := 0
 	for trackID, entry := range db.tracks {
-		elapsed := time.Since(entry.PPLIMessage.TimeOfMessage).Seconds()
+		elapsed := time.Since(entry.J32Message.TimeOfMessage).Seconds()
 		if elapsed > float64(entry.TTL) {
 			delete(db.tracks, trackID)
 			count++
@@ -121,21 +119,13 @@ func (db *TrackDB) CleanExpired() int {
 	return count
 }
 
-func (db *TrackDB) SetTTL(trackID string, ttl int) error {
+func (db *J32TrackDB) SetTTL(trackID string, ttl int) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
 	entry, exists := db.tracks[trackID]
 	if !exists {
 		return fmt.Errorf("track %s not found", trackID)
 	}
-
 	entry.TTL = ttl
 	return nil
-}
-
-func (db *TrackDB) Size() int {
-	db.mu.RLock()
-	defer db.mu.RUnlock()
-	return len(db.tracks)
 }

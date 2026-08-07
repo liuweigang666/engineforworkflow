@@ -1,0 +1,43 @@
+{
+  "name": "Link16 NPG Priority Scheduling Workflow",
+  "version": "1.0.0",
+  "description": "Per-NPG priority queues with terminal preemption and staleness purge (STANAG 5516 Section 4.6)",
+  "stages": [
+    {
+      "id": "enqueue_host",
+      "name": "Enqueue Host Message",
+      "description": "Place a host message into the transmit queue of its NPG",
+      "trigger": "auto",
+      "steps": [
+        {"id": "s1", "node": "enqueue_host_message", "on_reject": "abort"}
+      ]
+    },
+    {
+      "id": "terminal",
+      "name": "Terminal Maintenance Preempt",
+      "description": "Terminal-generated maintenance message preempts queued host messages",
+      "trigger": "exception",
+      "steps": [
+        {"id": "s1", "node": "terminal_preempt", "on_reject": "abort"}
+      ]
+    },
+    {
+      "id": "dispatch",
+      "name": "Dispatch Next Slot",
+      "description": "Purge stale entries and transmit the highest-priority eligible message",
+      "trigger": "timer",
+      "steps": [
+        {"id": "s1", "node": "dispatch_slot", "on_reject": "skip"}
+      ]
+    },
+    {
+      "id": "purge",
+      "name": "Purge Stale",
+      "description": "Remove messages exceeding their staleness limit",
+      "trigger": "timer",
+      "steps": [
+        {"id": "s1", "node": "purge_stale", "on_reject": "skip"}
+      ]
+    }
+  ]
+}
